@@ -47,6 +47,14 @@ def parse_region(address: str) -> str:
     return "지정되지 않은 지역"
 
 
+def get_region_district(address: str) -> tuple[str, str]:
+    region = parse_region(address)
+    district = "일반공업지역 / 제2종근린생활시설"
+    if "서울" in region:
+        district = "제2종일반주거지역 / 산업시설지구(데이터센터 가능)"
+    return region, district
+
+
 def compute_building_overview(address: str, scale_mw: float, center_type: str) -> Dict[str, object]:
     scale_mw = max(scale_mw, 0.1)
     site_factor = 5200 if center_type == "AI 데이터센터" else 4500
@@ -60,8 +68,14 @@ def compute_building_overview(address: str, scale_mw: float, center_type: str) -
     far = round(building_area / site_area, 2)
     parking = max(10, round(building_area / 400))
     landscaping_area = round(site_area * 0.12)
+    region, district = get_region_district(address)
+    address_display = (
+        f"{address}\n{region} / {district}"
+        if address
+        else "미입력"
+    )
     return {
-        "지역/주소": address or "미입력",
+        "지역/주소": address_display,
         "예상대지면적 (㎡)": site_area,
         "예상건축면적 (㎡)": building_area,
         "건폐율 (%)": coverage_rate,
@@ -78,10 +92,7 @@ def compute_building_overview(address: str, scale_mw: float, center_type: str) -
 
 
 def compute_law_review(address: str, overview: dict) -> tuple[str, pd.DataFrame]:
-    region = parse_region(address)
-    district = "일반공업지역 / 제2종근린생활시설"
-    if "서울" in region:
-        district = "제2종일반주거지역 / 산업시설지구(데이터센터 가능)"
+    region, district = get_region_district(address)
     planned_coverage = overview["건폐율 (%)"]
     planned_far = overview["용적률"]
     site_area = overview["예상대지면적 (㎡)"]
@@ -92,14 +103,14 @@ def compute_law_review(address: str, overview: dict) -> tuple[str, pd.DataFrame]
     if overview["예상높이 (m)"] > 24:
         sunlight = "정북일조선 적용 대상"
     law_rows = [
-        ["법정건폐율", "60% 이하", f"{planned_coverage}%", "적합" if planned_coverage <= 60 else "불합격"],
-        ["법정용적률", "200% 이하", f"{planned_far * 100:.0f}%", "적합" if planned_far <= 2.0 else "불합격"],
-        ["법정주차대수", "데이터센터 1대당 50kW 기준", f"{required_parking}대", "적합"],
-        ["대지안의 공지", "인접대지경계선 3m 이상 확보 권장", "3m 이상 확보", "검토 필요"],
-        ["일조사선", "정북일조, 채광일조 검토 필요", sunlight, "해당"],
-        ["지역지구 제한", "지역·지구별 건축행위 제한 적용", district, "검토 필요"],
-        ["법정조경률", "10% 이상", f"{planned_landscape_rate}%", "적합" if planned_landscape_rate >= 10 else "불합격"],
-        ["공개공지", "고층 건축물의 경우 공개공지 대상", "해당없음", "해당없음"],
+        ["법정건폐율", "건축법 제42조, 건축물의 건폐율 60% 이하", f"{planned_coverage}%", "적합" if planned_coverage <= 60 else "불합격"],
+        ["법정용적률", "건축법 제43조, 용적률 200% 이하", f"{planned_far * 100:.0f}%", "적합" if planned_far <= 2.0 else "불합격"],
+        ["법정주차대수", "건축법 시행령 제61조 및 건축물의 주차장 설치기준", f"{required_parking}대", "적합"],
+        ["대지안의 공지", "건축법 제44조, 인접대지경계선 3m 이상 확보 권장", "3m 이상 확보", "검토 필요"],
+        ["일조사선", "건축법 제58조, 일조사선에 따른 높이 제한 검토", sunlight, "해당"],
+        ["지역지구 제한", "국토의 계획 및 이용에 관한 법률 제7조 및 건축법 제4조", district, "검토 필요"],
+        ["법정조경률", "국토의 계획 및 이용에 관한 법률 제57조, 조경률 10% 이상", f"{planned_landscape_rate}%", "적합" if planned_landscape_rate >= 10 else "불합격"],
+        ["공개공지", "건축법 제50조, 공개공지 대상 여부 확인", "해당없음", "해당없음"],
     ]
     df = pd.DataFrame(law_rows, columns=["법규항목", "법규조항/기준", "계획값", "검토결과"])
     header = f"지역/지구: {region}  |  용도: 데이터센터"
