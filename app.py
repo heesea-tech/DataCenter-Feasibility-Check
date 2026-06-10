@@ -11,12 +11,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BUILDING_API_KEY = os.getenv("BUILDING_API_KEY")
-LAND_REGULATION_API_KEY = os.getenv("LAND_REGULATION_API_KEY")
-VWORLD_API_KEY = os.getenv("VWORLD_API_KEY")
-KAKAO_MAP_API_KEY = os.getenv("KAKAO_MAP_API_KEY")
-KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
-
 
 @dataclass
 class ApiStatus:
@@ -53,6 +47,28 @@ def _safe_float(value, default=None):
         return default
 
 
+def _is_ascii_text(value: object) -> bool:
+    try:
+        str(value).encode("ascii")
+        return True
+    except (UnicodeEncodeError, TypeError):
+        return False
+
+
+def _sanitize_api_key(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    key = str(value).strip()
+    return key if key and _is_ascii_text(key) else None
+
+
+BUILDING_API_KEY = _sanitize_api_key(os.getenv("BUILDING_API_KEY"))
+LAND_REGULATION_API_KEY = _sanitize_api_key(os.getenv("LAND_REGULATION_API_KEY"))
+VWORLD_API_KEY = _sanitize_api_key(os.getenv("VWORLD_API_KEY"))
+KAKAO_MAP_API_KEY = _sanitize_api_key(os.getenv("KAKAO_MAP_API_KEY"))
+KAKAO_REST_API_KEY = _sanitize_api_key(os.getenv("KAKAO_REST_API_KEY"))
+
+
 def parse_lot_number(address_text: str) -> tuple[Optional[str], Optional[str]]:
     if not address_text:
         return None, None
@@ -80,7 +96,7 @@ def get_kakao_address_data(address: str) -> Optional[dict]:
         data = response.json()
         documents = data.get("documents") or []
         return documents[0] if documents else None
-    except requests.RequestException:
+    except (requests.RequestException, UnicodeEncodeError):
         return None
 
 
@@ -335,18 +351,18 @@ def compute_mep_overview(overview: dict) -> pd.DataFrame:
     available_service_capacity = int(power_demand * 1.25)
     cooling_load_rt = round(power_demand * 0.35 / 3.517, 1)
     rows = [
-        ["전산실 면적", f"{it_area} ㎡"],
-        ["항온항습실 면적", f"{hh_area} ㎡"],
-        ["전산기계실 면적", f"{mech_area} ㎡"],
-        ["기반시설 면적", f"{infra_area} ㎡"],
-        ["지원시설 면적", f"{support_area} ㎡"],
-        ["UPS 용량", f"{ups_capacity} kVA"],
-        ["랙 수량", f"{rack_count} EA"],
-        ["랙 전력 밀도", f"{rack_power_density} kW/rack"],
-        ["필요 수전 용량", f"{power_demand} kW"],
-        ["확보 가능한 수전 용량", f"{available_service_capacity} kW"],
-        ["예상 냉각부하", f"{cooling_load_rt} RT"],
-        ["상수도 공급량", f"{water_supply} m³/day"],
+        ["전산실 면적", f"{it_area:,} ㎡"],
+        ["항온항습실 면적", f"{hh_area:,} ㎡"],
+        ["전산기계실 면적", f"{mech_area:,} ㎡"],
+        ["기반시설 면적", f"{infra_area:,} ㎡"],
+        ["지원시설 면적", f"{support_area:,} ㎡"],
+        ["UPS 용량", f"{ups_capacity:,} kVA"],
+        ["랙 수량", f"{rack_count:,} EA"],
+        ["랙 전력 밀도", f"{rack_power_density:,} kW/rack"],
+        ["필요 수전 용량", f"{power_demand:,} kW"],
+        ["확보 가능한 수전 용량", f"{available_service_capacity:,} kW"],
+        ["예상 냉각부하", f"{cooling_load_rt:,} RT"],
+        ["상수도 공급량", f"{water_supply:,} m³/day"],
     ]
     return pd.DataFrame(rows, columns=["항목", "예상값"])
 
