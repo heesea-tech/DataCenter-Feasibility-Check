@@ -58,7 +58,7 @@ def compute_building_overview(address: str, scale_mw: float, center_type: str) -
     total_height = round(floors * floor_height + 3, 1)
     floor_area = round(building_area / floors)
     far = round(building_area / site_area, 2)
-    parking = max(10, int(scale_mw * 6))
+    parking = max(10, round(building_area / 400))
     landscaping_area = round(site_area * 0.12)
     return {
         "지역/주소": address or "미입력",
