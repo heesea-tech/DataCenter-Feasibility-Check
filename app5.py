@@ -648,18 +648,13 @@ with left_col:
     st.markdown('<div class="section-title">API 현황</div>', unsafe_allow_html=True)
     st.dataframe(get_api_status_df(), use_container_width=True, hide_index=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with right_col:
-    st.markdown('<div class="right-panel">', unsafe_allow_html=True)
-
     if run and address.strip():
         address_info = kakao_search_address(address)
         building_info = get_building_register_info(address_info)
         land_info = get_land_regulation_info(address_info)
-
-        # 디버그: API 응답 확인용 expander
-        with st.expander("디버그: API 응답 (접기 가능)", expanded=False):
+        
+        st.markdown('<div class="section-title">디버그: API 응답</div>', unsafe_allow_html=True)
+        with st.expander("상세 조회 (접기 가능)", expanded=False):
             st.write("주소 검색 결과:", address_info)
             st.write("건축물대장 응답 요약:", {k:v for k,v in (building_info or {}).items() if k not in ['_raw_xml', '_debug']})
             if isinstance(building_info, dict) and building_info.get("_raw_xml"):
@@ -673,6 +668,12 @@ with right_col:
             if isinstance(land_info, dict) and land_info.get("_debug"):
                 st.write("토지규제 디버그 로그:", land_info.get("_debug"))
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with right_col:
+    st.markdown('<div class="right-panel">', unsafe_allow_html=True)
+
+    if run and address.strip():
         inferred = infer_mep_defaults(capacity_mw, dc_type)
         prog = calculate_program(capacity_mw, dc_type, inferred)
         arch = generate_architecture_summary(address, capacity_mw, dc_type, prog, address_info, building_info, land_info)
