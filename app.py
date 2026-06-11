@@ -6,10 +6,6 @@ from typing import Dict, Optional
 import pandas as pd
 import requests
 import streamlit as st
-from dotenv import load_dotenv
-
-
-load_dotenv()
 
 
 @dataclass
@@ -62,11 +58,16 @@ def _sanitize_api_key(value: Optional[str]) -> Optional[str]:
     return key if key and _is_ascii_text(key) else None
 
 
-BUILDING_API_KEY = _sanitize_api_key(os.getenv("BUILDING_API_KEY"))
-LAND_REGULATION_API_KEY = _sanitize_api_key(os.getenv("LAND_REGULATION_API_KEY"))
-VWORLD_API_KEY = _sanitize_api_key(os.getenv("VWORLD_API_KEY"))
-KAKAO_MAP_API_KEY = _sanitize_api_key(os.getenv("KAKAO_MAP_API_KEY"))
-KAKAO_REST_API_KEY = _sanitize_api_key(os.getenv("KAKAO_REST_API_KEY"))
+def get_secret(key: str) -> Optional[str]:
+    raw = st.secrets.get(key) if hasattr(st, "secrets") else None
+    return _sanitize_api_key(raw or os.getenv(key))
+
+
+BUILDING_API_KEY = get_secret("BUILDING_API_KEY")
+LAND_REGULATION_API_KEY = get_secret("LAND_REGULATION_API_KEY")
+VWORLD_API_KEY = get_secret("VWORLD_API_KEY")
+KAKAO_MAP_API_KEY = get_secret("KAKAO_MAP_API_KEY")
+KAKAO_REST_API_KEY = get_secret("KAKAO_REST_API_KEY")
 
 
 def parse_lot_number(address_text: str) -> tuple[Optional[str], Optional[str]]:
