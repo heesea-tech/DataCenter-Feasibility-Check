@@ -208,13 +208,29 @@ def parse_xml_root(xml_text: str):
     except Exception:
         return None
 
+def _strip_ns(tag):
+    if isinstance(tag, str) and '}' in tag:
+        return tag.split('}', 1)[1]
+    return tag
+
+
+def _normalize_tag(tag):
+    if not isinstance(tag, str):
+        return ""
+    tag_value = _strip_ns(tag).strip().lower()
+    if "/" in tag_value:
+        tag_value = tag_value.split("/")[-1]
+    return tag_value
+
+
 def find_text(root, tag_names):
     if root is None:
         return None
     for tag in tag_names:
-        node = root.find(f".//{tag}")
-        if node is not None and node.text:
-            return node.text.strip()
+        normalized_tag = _normalize_tag(tag)
+        for node in root.iter():
+            if _normalize_tag(node.tag) == normalized_tag and node.text:
+                return node.text.strip()
     return None
 
 # =========================================================
@@ -327,14 +343,27 @@ def get_building_register_info(address_info: Dict) -> Dict:
                     debug_logs.append(log_entry)
                     continue
 
+                result_code = find_text(root, ["resultCode", "header/resultCode"])
+                result_msg = find_text(root, ["resultMsg", "header/resultMsg"])
+                if result_code and not str(result_code).strip().startswith("00"):
+                    log_entry["error"] = "api_result_error"
+                    log_entry["result_code"] = result_code
+                    log_entry["result_msg"] = result_msg
+                    debug_logs.append(log_entry)
+                    continue
+
                 result = {
                     "대지면적(㎡)": float(find_text(root, ["platArea"])) if find_text(root, ["platArea"]) else None,
                     "건축면적(㎡)": float(find_text(root, ["archArea"])) if find_text(root, ["archArea"]) else None,
                     "연면적(㎡)": float(find_text(root, ["totArea"])) if find_text(root, ["totArea"]) else None,
                     "주용도": find_text(root, ["mainPurpsCdNm", "mainPurpsCd"]),
+                    "_result_code": result_code,
+                    "_result_msg": result_msg,
                     "_raw_xml": r.text,
                     "_debug": debug_logs,
                 }
+                if all(result.get(k) is None for k in ["대지면적(㎡)", "건축면적(㎡)", "연면적(㎡)", "주용도"]):
+                    result["_error"] = "no_building_data"
                 return result
             except Exception as exc:
                 debug_logs.append({
@@ -376,6 +405,7 @@ def get_land_regulation_info(address_info: Dict) -> Dict:
                 "params": params,
                 "status_code": r.status_code,
                 "text_snippet": r.text[:800],
+                "response_text": r.text.strip(),
             }
             if r.status_code != 200:
                 log_entry["error"] = "http_status_not_200"
@@ -415,7 +445,7 @@ def get_land_regulation_info(address_info: Dict) -> Dict:
 # MEP 자동 추정 - 3 Tier
 # =========================================================
 def infer_mep_defaults(capacity_mw: float, dc_type: str) -> Dict:
-    if dc_type == "AI":
+    if dc_type == "AI 데이터센터":
         if capacity_mw < 10:
             return {"tier": "Tier 3", "rack_kw": 30, "pue": 1.25, "white_ratio": 0.36, "cooling": "수랭식", "operation": "자사용"}
         elif capacity_mw < 40:
@@ -439,7 +469,7 @@ def calculate_program(capacity_mw: float, dc_type: str, inferred: Dict) -> Dict:
     rack_count = max(1, math.ceil(it_load_kw / rack_kw))
     total_power_kw = it_load_kw * pue
 
-    gross_area_per_mw = 950 if dc_type == "일반" else 1250
+    gross_area_per_mw = 950 if dc_type == "일반 데이터센터" else 1250
     gross_floor_area = capacity_mw * gross_area_per_mw
 
     white_space_area = gross_floor_area * white_ratio
@@ -460,7 +490,7 @@ def calculate_program(capacity_mw: float, dc_type: str, inferred: Dict) -> Dict:
         "circulation_area": circulation_area,
         "ups_capacity_kw": it_load_kw * 1.15,
         "cooling_rt": total_power_kw / 3.517,
-        "water_supply_cmd": capacity_mw * (18 if dc_type == "일반" else 28),
+        "water_supply_cmd": capacity_mw * (18 if dc_type == "일반 데이터센터" else 28),
     }
 
 # =========================================================
@@ -468,7 +498,7 @@ def calculate_program(capacity_mw: float, dc_type: str, inferred: Dict) -> Dict:
 # =========================================================
 def generate_architecture_summary(address: str, capacity_mw: float, dc_type: str, prog: Dict,
                                   address_info: Dict, building_info: Dict, land_info: Dict) -> Dict:
-    if dc_type == "AI":
+    if dc_type == "AI 데이터센터":
         above, below, floor_h = (5, 2, 6.5) if capacity_mw < 20 else (6, 2, 6.5)
     else:
         above, below, floor_h = (4, 1, 5.8) if capacity_mw < 20 else (5, 1, 5.8)
@@ -641,7 +671,7 @@ with left_col:
 
     st.markdown('<div class="section-title">조건입력</div>', unsafe_allow_html=True)
     address = st.text_input("주소 입력", placeholder="예: 서울시 강남구 삼성동 ...")
-    capacity_mw = st.number_input("규모 입력 (MW)", min_value=0.0, value=20.0, step=1.0)
+    capacity_mw = st.number_input("규모 입력 (MW)", min_value=0.0, value=10.0, step=1.0)
     dc_type = st.radio("일반 / AI 선택", ["일반 데이터센터", "AI 데이터센터"], horizontal=True)
     run = st.button("검토 실행", type="primary", use_container_width=True)
 
@@ -656,13 +686,23 @@ with left_col:
         st.markdown('<div class="section-title">디버그: API 응답</div>', unsafe_allow_html=True)
         with st.expander("상세 조회 (접기 가능)", expanded=False):
             st.write("주소 검색 결과:", address_info)
-            st.write("건축물대장 응답 요약:", {k:v for k,v in (building_info or {}).items() if k not in ['_raw_xml', '_debug']})
+            building_summary = {k: v for k, v in (building_info or {}).items() if k not in ['_raw_xml', '_debug']}
+            if isinstance(building_info, dict) and building_info.get("_error"):
+                building_summary["_error"] = building_info.get("_error")
+            if not building_summary or all(v is None or v == "" for v in building_summary.values()):
+                building_summary = {"_note": "건축물대장 API가 유효한 값을 반환하지 않았습니다. 디버그 로그를 확인하세요."}
+            st.write("건축물대장 응답 요약:", building_summary)
             if isinstance(building_info, dict) and building_info.get("_raw_xml"):
                 st.code(building_info.get("_raw_xml")[:3000], language='xml')
             if isinstance(building_info, dict) and building_info.get("_debug"):
                 st.write("건축물대장 디버그 로그:", building_info.get("_debug"))
 
-            st.write("토지규제 응답 요약:", {k:v for k,v in (land_info or {}).items() if k not in ['_raw_xml', '_debug']})
+            land_summary = {k: v for k, v in (land_info or {}).items() if k not in ['_raw_xml', '_debug']}
+            if isinstance(land_info, dict) and land_info.get("_error"):
+                land_summary["_error"] = land_info.get("_error")
+            if not land_summary:
+                land_summary = {"_note": "토지규제 API가 유효한 값을 반환하지 않았습니다. 디버그 로그를 확인하세요."}
+            st.write("토지규제 응답 요약:", land_summary)
             if isinstance(land_info, dict) and land_info.get("_raw_xml"):
                 st.code(land_info.get("_raw_xml")[:3000], language='xml')
             if isinstance(land_info, dict) and land_info.get("_debug"):
